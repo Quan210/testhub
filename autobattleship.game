@@ -1,0 +1,186 @@
+// ==UserScript==
+// @name         Battleship.org Target/Hunt AI Bot (Minesweeper Style)
+// @namespace    http://tampermonkey.net/
+// @version      4.0
+// @description  Bot tự động chơi Battleship theo phong cách Dò Mìn / Săn Tàu khi bắn trúng
+// @author       MiNH BẢO
+// @match        https://*.battleship-game.org/*
+// @match        http://*.battleship-game.org/*
+// @grant        GM_addStyle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const BOARD_SIZE = 10;
+
+    class MinesweeperStyleAI {
+        constructor() {
+            this.size = BOARD_SIZE;
+        }
+
+        // Quét trạng thái bàn cờ từ DOM
+        // 0 = Chưa bắn, -1 = Bắn trượt, 1 = Bắn trúng
+        getBoardState(opponentTable) {
+            let board = Array(this.size).fill(0).map(() => Array(this.size).fill(0));
+            const cells = opponentTable.querySelectorAll('.battlefield-cell-content');
+
+            cells.forEach(cell => {
+                const x = parseInt(cell.getAttribute('data-x'));
+                const y = parseInt(cell.getAttribute('data-y'));
+                const parentTd = cell.closest('.battlefield-cell');
+
+                if (parentTd) {
+                    if (parentTd.classList.contains('battlefield-cell__miss') || parentTd.classList.contains('battlefield-cell__empty-hit')) {
+                        board[y][x] = -1; // MISS
+                    } else if (parentTd.classList.contains('battlefield-cell__hit') || parentTd.classList.contains('battlefield-cell__done') || parentTd.classList.contains('battlefield-cell__ship')) {
+                        board[y][x] = 1;  // HIT
+                    }
+                }
+            });
+            return board;
+        }
+
+        // Lấy danh sách các ô trúng hiện tại
+        getHits(board) {
+            let hits = [];
+            for (let r = 0; r < this.size; r++) {
+                for (let c = 0; c < this.size; c++) {
+                    if (board[r][c] === 1) {
+                        hits.push({ x: c, y: r });
+                    }
+                }
+            }
+            return hits;
+        }
+
+        // Tìm nước đi tiếp theo (Thuật toán Hunt/Target)
+        getNextMove(board) {
+            const hits = this.getHits(board);
+
+            // GIAI ĐOẠN 1: TẬP TRUNG SĂN TÀU (Nếu đã có ít nhất 1 ô HIT)
+            for (let hit of hits) {
+                // Kiểm tra 4 hướng xung quanh ô HIT: [Trái, Phải, Trên, Dưới]
+                const neighbors = [
+                    { x: hit.x - 1, y: hit.y },
+                    { x: hit.x + 1, y: hit.y },
+                    { x: hit.x, y: hit.y - 1 },
+                    { x: hit.x, y: hit.y + 1 }
+                ];
+
+                for (let n of neighbors) {
+                    // Nếu ô hàng xóm nằm trong bàn cờ và CHƯA BẮN (value = 0)
+                    if (n.x >= 0 && n.x < this.size && n.y >= 0 && n.y < this.size) {
+                        if (board[n.y][n.x] === 0) {
+                            return { x: n.x, y: n.y, mode: 'TARGET (Săn tàu)' };
+                        }
+                    }
+                }
+            }
+
+            // GIAI ĐOẠN 2: DÒ TÌM (HUNT) - Bắn ngẫu nhiên ô dạng Caro (Ô chẵn)
+            let candidates = [];
+            for (let r = 0; r < this.size; r++) {
+                for (let c = 0; c < this.size; c++) {
+                    if (board[r][c] === 0) {
+                        // Ưu tiên các ô theo họa tiết ô bàn cờ (cắm cờ cách quãng)
+                        if ((r + c) % 2 === 0) {
+                            candidates.push({ x: c, y: r });
+                        }
+                    }
+                }
+            }
+
+            // Nếu hết ô ô bàn cờ, lấy toàn bộ các ô trống còn lại
+            if (candidates.length === 0) {
+                for (let r = 0; r < this.size; r++) {
+                    for (let c = 0; c < this.size; c++) {
+                        if (board[r][c] === 0) candidates.push({ x: c, y: r });
+                    }
+                }
+            }
+
+            // Chọn ngẫu nhiên 1 ô trong danh sách candidatos
+            if (candidates.length > 0) {
+                const randomChoice = candidates[Math.floor(Math.random() * candidates.length)];
+                return { x: randomChoice.x, y: randomChoice.y, mode: 'HUNT (Dò mìn)' };
+            }
+
+            return null;
+        }
+    }
+
+    const ai = new MinesweeperStyleAI();
+    let autoInterval = null;
+
+    function getOpponentTable() {
+        const tables = document.querySelectorAll('.battlefield-table');
+        return tables.length >= 2 ? tables[1] : (tables.length === 1 ? tables[0] : null);
+    }
+
+    function playTurn() {
+        const opponentTable = getOpponentTable();
+        if (!opponentTable) return;
+
+        const board = ai.getBoardState(opponentTable);
+        const move = ai.getNextMove(board);
+
+        if (move) {
+            const cols = "ABCDEFGHIJ";
+            updateStatus(`[${move.mode}] Bắn: ${cols[move.x]}${move.y + 1}`);
+
+            const targetCell = opponentTable.querySelector(`.battlefield-cell-content[data-x="${move.x}"][data-y="${move.y}"]`);
+            if (targetCell) {
+                targetCell.click();
+                targetCell.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            }
+        } else {
+            updateStatus("Đã hết ô có thể bắn!");
+        }
+    }
+
+    function updateStatus(text) {
+        const statusEl = document.getElementById('bot-status-text');
+        if (statusEl) statusEl.innerText = text;
+    }
+
+    // Giao diện UI Điều Khiển
+    function createUI() {
+        if (document.getElementById('bs-bot-ui')) return;
+
+        const panel = document.createElement('div');
+        panel.id = 'bs-bot-ui';
+        panel.innerHTML = `
+            <div style="font-weight:bold; font-size:14px; margin-bottom:6px; color:#FFD54F;">💣 Battleship Dò Mìn Bot</div>
+            <div id="bot-status-text" style="font-size:11px; margin-bottom:10px; color:#ddd;">Trạng thái: Tạm dừng</div>
+            <button id="btn-toggle-auto" style="width:100%; padding:8px; background:#FFD54F; color:#111; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">BẮT ĐẦU AUTO</button>
+        `;
+
+        Object.assign(panel.style, {
+            position: 'fixed', top: '15px', right: '15px', width: '200px',
+            backgroundColor: 'rgba(20, 20, 20, 0.95)', padding: '12px', borderRadius: '8px',
+            zIndex: '999999', fontFamily: 'sans-serif', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', border: '1px solid #555'
+        });
+
+        document.body.appendChild(panel);
+
+        const btn = document.getElementById('btn-toggle-auto');
+        btn.addEventListener('click', () => {
+            if (autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
+                btn.innerText = "BẮT ĐẦU AUTO";
+                btn.style.background = "#FFD54F";
+                updateStatus("Trạng thái: Tạm dừng");
+            } else {
+                btn.innerText = "DỪNG AUTO";
+                btn.style.background = "#FF5252";
+                updateStatus("Đang Auto Săn Tàu...");
+                autoInterval = setInterval(playTurn, 800); // Tốc độ bắn 0.8s / lượt
+            }
+        });
+    }
+
+    window.addEventListener('load', () => setTimeout(createUI, 1000));
+    setInterval(createUI, 2000);
+})();

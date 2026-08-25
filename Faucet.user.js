@@ -25,6 +25,7 @@
 // @match                        https://cryptolinkforearn.com/faucet*
 // @grant                        none
 // @run-at                       document-end
+// @icon                         https://i.ibb.co/xtBmDFG3/giphy.gif
 // ==/UserScript==
 
 (function(){

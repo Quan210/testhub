@@ -1,5 +1,0 @@
-{
-  "UEeh7WtqgctKnqCGsIkOfKQDDK3uEWF1TfuhW9LnaH0": "yogut.me",
-  "du66anDjLysXNN9XjWeTnSYl9G6ia8kU4WpJ97EK3cs": "mindlinx.co",
-  "sZoJ5DCBlQSeFSS-fA4_xAMB_08jzmTOZPjSikY5mqc": "mindsoar.co"
-}
